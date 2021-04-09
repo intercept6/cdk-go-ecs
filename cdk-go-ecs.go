@@ -2,7 +2,9 @@ package main
 
 import (
 	"github.com/aws/aws-cdk-go/awscdk"
-	"github.com/aws/aws-cdk-go/awscdk/awssns"
+	"github.com/aws/aws-cdk-go/awscdk/awsec2"
+	"github.com/aws/aws-cdk-go/awscdk/awsecs"
+	awsalb "github.com/aws/aws-cdk-go/awscdk/awselasticloadbalancingv2"
 	"github.com/aws/constructs-go/constructs/v3"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -18,12 +20,39 @@ func NewCdkGoEcsStack(scope constructs.Construct, id string, props *CdkGoEcsStac
 	}
 	stack := awscdk.NewStack(scope, &id, &sprops)
 
-	// The code that defines your stack goes here
+	vpc := awsec2.NewVpc(stack, jsii.String("vpc"), nil)
 
-	// as an example, here's how you would define an AWS SNS topic:
-	awssns.NewTopic(stack, jsii.String("MyTopic"), &awssns.TopicProps{
-		DisplayName: jsii.String("MyCoolTopic"),
+	cluster := awsecs.NewCluster(stack, jsii.String("cluster"), &awsecs.ClusterProps{
+		ContainerInsights: jsii.Bool(true),
+		Vpc:               vpc,
 	})
+	taskDef := awsecs.NewFargateTaskDefinition(stack, jsii.String("taskDef"), &awsecs.FargateTaskDefinitionProps{
+		Cpu: jsii.Number(1024),
+	})
+	taskDef.AddContainer(jsii.String("nginx"), &awsecs.ContainerDefinitionOptions{
+		Image: awsecs.ContainerImage_FromRegistry(jsii.String("nginx/nginx:latest"), nil),
+	})
+	service := awsecs.NewFargateService(stack, jsii.String("service"), &awsecs.FargateServiceProps{
+		Cluster:         cluster,
+		TaskDefinition:  taskDef,
+		PlatformVersion: awsecs.FargatePlatformVersion_VERSION1_4,
+		DesiredCount:    jsii.Number(1),
+	})
+
+	alb := awsalb.NewApplicationLoadBalancer(stack, jsii.String("alb"), &awsalb.ApplicationLoadBalancerProps{
+		Vpc:            vpc,
+		InternetFacing: jsii.Bool(true),
+	})
+	listener := alb.AddListener(jsii.String("listener"), &awsalb.BaseApplicationListenerProps{
+		Port: jsii.Number(80),
+	})
+	listener.AddTargets(jsii.String("targets"), &awsalb.AddApplicationTargetsProps{
+		Port:    jsii.Number(80),
+		Targets: &[]awsalb.IApplicationLoadBalancerTarget{service},
+	})
+
+	//network := lib.NewNetwork(scope, jsii.String("network"))
+	//lib.NewECS(scope, jsii.String("ecs"), &lib.ECSProps{Vpc: network.Vpc})
 
 	return stack
 }
